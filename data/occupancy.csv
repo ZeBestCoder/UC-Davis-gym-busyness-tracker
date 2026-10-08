@@ -1,0 +1,4 @@
+timestamp_utc,timestamp_local,weekday,hour,facility_id,facility,current,capacity,pct_full
+2026-10-08T14:20:27Z,2026-10-08T07:20:27-07:00,Thu,7,26541008-adb9-4943-897b-9eeb4e685e97,ARC Access,278,2500,11.1
+2026-10-08T14:20:27Z,2026-10-08T07:20:27-07:00,Thu,7,4990212a-d51b-4793-bbde-eeeb435b0aa6,Recreation Pool,16,350,4.6
+2026-10-08T14:20:27Z,2026-10-08T07:20:27-07:00,Thu,7,ecd23993-65f6-4f59-9c98-730103abce7b,Rock Wall,25,25,100.0
