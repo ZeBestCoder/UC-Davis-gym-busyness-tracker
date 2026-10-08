@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gym Busyness Tracker</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;
+  --hover-wash: rgba(11,11,11,0.05);
+  --tip-bg: #0b0b0b;
+  --tip-ink: #ffffff;
+  --empty-cell: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --hover-wash: rgba(255,255,255,0.06);
+    --tip-bg: #f9f9f7;
+    --tip-ink: #0b0b0b;
+    --empty-cell: #242422;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5;
+  --hover-wash: rgba(255,255,255,0.06);
+  --tip-bg: #f9f9f7;
+  --tip-ink: #0b0b0b;
+  --empty-cell: #242422;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; margin: 0 0 2px; }
+.sub { color: var(--ink-2); margin: 0; }
+.note { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0 16px; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button {
+  font: inherit; font-size: 14px; color: var(--ink-2); background: none; border: 0;
+  padding: 6px 12px; cursor: pointer; border-right: 1px solid var(--border);
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--hover-wash); }
+.seg button[aria-pressed="true"] { color: var(--ink); font-weight: 600; background: var(--hover-wash); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tile { padding: 14px 16px; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .detail { color: var(--muted); font-size: 13px; }
+
+.card { padding: 18px 18px 14px; margin-bottom: 16px; }
+.card-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.scroll-x { overflow-x: auto; }
+svg { display: block; }
+svg text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--muted); font-variant-numeric: tabular-nums; }
+
+.legend { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
+.legend .ramp { width: 140px; height: 10px; border-radius: 3px; }
+.legend .swatch { width: 14px; height: 10px; border-radius: 3px; background: var(--empty-cell); border: 1px solid var(--border); }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+.rank { list-style: none; margin: 0; padding: 0; }
+.rank li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.rank li:first-child { border-top: 0; }
+.rank .pct { color: var(--ink-2); }
+.rank .n { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 8px; }
+th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; }
+td:first-child, th:first-child { text-align: left; }
+
+.empty { text-align: center; padding: 48px 16px; }
+.empty p { color: var(--ink-2); max-width: 520px; margin: 8px auto 20px; }
+.btn {
+  font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); display: inline-block;
+}
+.btn:hover { background: var(--hover-wash); }
+.btn.primary { background: var(--series-1); color: #fff; border-color: transparent; }
+.banner { background: var(--surface); border: 1px dashed var(--axis); border-radius: 8px; padding: 8px 12px; color: var(--ink-2); font-size: 13px; margin-top: 16px; }
+footer { color: var(--muted); font-size: 13px; margin-top: 24px; }
+footer a { color: var(--ink-2); }
+
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--tip-bg); color: var(--tip-ink); font-size: 12px; line-height: 1.4;
+  padding: 6px 9px; border-radius: 6px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+#tip b { font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gym Busyness Tracker</h1>
+  <p class="sub" id="status">UC Davis Recreation, hourly occupancy readings</p>
+  <div id="demoBanner" class="banner" hidden>Showing <b>made-up demo data</b> so you can see the layout. Real data appears once the collector has run.</div>
+
+  <div id="app" hidden>
+    <div class="controls">
+      <div class="seg" id="facilityPicker" role="group" aria-label="Facility"></div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>When is it busy?</h2>
+          <p class="note">Average % of capacity by day and hour</p>
+        </div>
+        <div class="legend" id="heatLegend"></div>
+      </div>
+      <div class="scroll-x"><div id="heatmap"></div></div>
+      <details>
+        <summary>Show as table</summary>
+        <div class="scroll-x" id="heatTable"></div>
+      </details>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Average by hour</h2>
+          <p class="note">Average % of capacity at each hour of the day</p>
+        </div>
+        <div class="seg" id="dayPicker" role="group" aria-label="Days"></div>
+      </div>
+      <div id="hourBars"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>Quietest times</h2>
+        <p class="note">Lowest average fullness</p>
+        <ol class="rank" id="quietList" style="margin-top:10px"></ol>
+      </section>
+      <section class="card">
+        <h2>Busiest times</h2>
+        <p class="note">Highest average fullness</p>
+        <ol class="rank" id="busyList" style="margin-top:10px"></ol>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Daily trend</h2>
+      <p class="note">Average % of capacity per day, across open hours</p>
+      <div id="trend" style="margin-top:12px"></div>
+    </section>
+
+    <footer>
+      Readings with an occupancy of 0 are treated as "closed" and left out of the averages.
+      Times are Davis local time. Each reading is taken a little after the hour.
+      <a href="data/occupancy.csv" download>Download the raw CSV</a>
+    </footer>
+  </div>
+
+  <div id="empty" class="card empty" hidden>
+    <h2>No data yet</h2>
+    <p id="emptyMsg">The collector hasn't saved any readings yet, or this page was opened as a local file.
+      Load a CSV yourself, or preview the dashboard with demo data.</p>
+    <label class="btn primary">Load occupancy.csv<input type="file" accept=".csv,text/csv" id="fileInput" hidden></label>
+    <button class="btn" id="demoBtn" type="button">Preview with demo data</button>
+  </div>
+</main>
+<div id="tip" role="tooltip"></div>
+
+<script>
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+// Sequential blue ramp, step 100 -> 700.
+const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+
+const state = { rows: [], facility: null, dayFilter: "all" };
+const $ = (id) => document.getElementById(id);
+
+// ---------- data loading ----------
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const split = (line) => {
+    const out = []; let cur = "", q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true; else if (c === ",") { out.push(cur); cur = ""; } else cur += c;
+    }
+    out.push(cur); return out;
+  };
+  const head = split(lines[0]);
+  return lines.slice(1).filter(Boolean).map((l) => {
+    const v = split(l), o = {};
+    head.forEach((h, i) => (o[h] = v[i]));
+    return {
+      t: new Date(o.timestamp_utc),
+      date: o.timestamp_local.slice(0, 10),
+      wd: DAYS.indexOf(o.weekday),
+      hour: +o.hour,
+      fid: o.facility_id,
+      name: o.facility,
+      cur: +o.current,
+      cap: +o.capacity,
+      pct: o.pct_full === "" ? null : +o.pct_full,
+    };
+  }).filter((r) => r.wd >= 0 && !isNaN(r.hour));
+}
+
+function demoRows() {
+  // Synthetic readings for previewing the layout only.
+  const facs = [["demo-arc", "ARC Access", 2500, 0.55], ["demo-pool", "Recreation Pool", 350, 0.35], ["demo-wall", "Rock Wall", 25, 0.6]];
+  const rows = []; let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 27);
+  for (let d = 0; d < 28; d++) {
+    const day = new Date(start); day.setDate(start.getDate() + d);
+    const wd = (day.getDay() + 6) % 7, weekend = wd >= 5;
+    const open = weekend ? 8 : 6, close = weekend ? 21 : 23;
+    for (let h = 0; h < 24; h++) {
+      const t = new Date(day); t.setHours(h, 20);
+      for (const [fid, name, cap, scale] of facs) {
+        let f = 0;
+        if (h >= open && h < close) {
+          const evening = Math.exp(-((h - 17.5) ** 2) / 6), noon = Math.exp(-((h - 12) ** 2) / 4), morning = Math.exp(-((h - 7.5) ** 2) / 2);
+          f = weekend ? 0.45 * Math.exp(-((h - 14) ** 2) / 10) + 0.05 : 0.08 + 0.75 * evening + 0.35 * noon + 0.2 * morning;
+          if (wd === 4) f *= 0.75; // Fridays are quieter
+          f = Math.max(0.02, f * scale * (1 + d * 0.004) * (0.85 + rand() * 0.3));
+        }
+        const cur = Math.round(f * cap);
+        const pad = (n) => String(n).padStart(2, "0");
+        rows.push({ t, date: `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`, wd, hour: h, fid, name, cur, cap, pct: Math.round(1000 * cur / cap) / 10 });
+      }
+    }
+  }
+  return rows;
+}
+
+function start(rows, isDemo) {
+  state.rows = rows;
+  const facs = facilities();
+  if (!facs.length) return showEmpty("The CSV loaded but had no readable rows.");
+  state.facility = facs[0].fid;
+  $("demoBanner").hidden = !isDemo;
+  $("empty").hidden = true;
+  $("app").hidden = false;
+  renderPickers();
+  render();
+}
+
+function showEmpty(msg) {
+  if (msg) $("emptyMsg").textContent = msg;
+  $("empty").hidden = false;
+  $("app").hidden = true;
+}
+
+// ---------- aggregation ----------
+function facilities() {
+  const m = new Map();
+  for (const r of state.rows) if (!m.has(r.fid)) m.set(r.fid, { fid: r.fid, name: r.name, cap: r.cap });
+  return [...m.values()];
+}
+const open = () => state.rows.filter((r) => r.fid === state.facility && r.cur > 0 && r.pct != null);
+const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+
+function groupBy(rows, keyFn) {
+  const m = new Map();
+  for (const r of rows) { const k = keyFn(r); (m.get(k) || m.set(k, []).get(k)).push(r); }
+  return m;
+}
+
+// ---------- formatting ----------
+const hourLabel = (h) => (h % 12 || 12) + (h < 12 ? " AM" : " PM");
+const hourShort = (h) => (h % 12 || 12) + (h < 12 ? "a" : "p");
+const pctFmt = (v) => (v == null ? "-" : v.toFixed(0) + "%");
+const dateFmt = (iso, opts = { month: "short", day: "numeric" }) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, opts);
+const darkMode = () => getComputedStyle(document.documentElement).colorScheme === "dark";
+
+// ---------- tooltip ----------
+const tip = $("tip");
+function showTip(html, x, y) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + 14, top = y - h - 10;
+  if (left + w > innerWidth - 8) left = x - w - 14;
+  if (top < 8) top = y + 16;
+  tip.style.left = left + "px"; tip.style.top = top + "px";
+}
+const hideTip = () => (tip.style.display = "none");
+document.addEventListener("pointermove", (e) => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  if (el) showTip(el.dataset.tip, e.clientX, e.clientY);
+  else if (!e.target.closest || !e.target.closest("[data-crosshair]")) hideTip();
+});
+
+// ---------- pickers ----------
+function renderPickers() {
+  $("facilityPicker").innerHTML = facilities().map((f) =>
+    `<button type="button" data-fid="${f.fid}" aria-pressed="${f.fid === state.facility}">${f.name}</button>`).join("");
+  $("dayPicker").innerHTML = [["all", "All days"], ["wk", "Weekdays"], ["we", "Weekends"]].map(([k, l]) =>
+    `<button type="button" data-day="${k}" aria-pressed="${k === state.dayFilter}">${l}</button>`).join("");
+}
+$("facilityPicker").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  state.facility = b.dataset.fid; renderPickers(); render();
+});
+$("dayPicker").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  state.dayFilter = b.dataset.day; renderPickers(); renderHourBars(open());
+});
+
+// ---------- render ----------
+function render() {
+  const rows = open();
+  const all = state.rows.filter((r) => r.fid === state.facility);
+  const dates = [...new Set(all.map((r) => r.date))].sort();
+  const last = all.reduce((m, r) => (r.t > m ? r.t : m), new Date(0));
+  $("status").textContent = `UC Davis Recreation · ${all.length.toLocaleString()} readings from ${dateFmt(dates[0])} to ${dateFmt(dates[dates.length - 1])} · last reading ${last.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+
+  if (!rows.length) {
+    $("tiles").innerHTML = `<div class="tile"><div class="label">No open-hour readings for this facility yet.</div></div>`;
+    ["heatmap", "heatTable", "hourBars", "quietList", "busyList", "trend", "heatLegend"].forEach((id) => ($(id).innerHTML = ""));
+    return;
+  }
+
+  const slots = [...groupBy(rows, (r) => r.wd * 100 + r.hour)].map(([k, rs]) => ({
+    wd: Math.floor(k / 100), hour: k % 100, avg: mean(rs.map((r) => r.pct)), n: rs.length,
+    avgCount: mean(rs.map((r) => r.cur)),
+  }));
+  const minN = Math.max(1, Math.min(2, Math.floor(dates.length / 7)));
+  const ranked = slots.filter((s) => s.n >= minN).sort((a, b) => a.avg - b.avg);
+  const peak = rows.reduce((m, r) => (r.cur > m.cur ? r : m), rows[0]);
+
+  renderTiles(rows, ranked, peak, dates.length);
+  renderHeatmap(slots);
+  renderHourBars(rows);
+  renderRank($("quietList"), ranked.slice(0, 6));
+  renderRank($("busyList"), ranked.slice(-6).reverse());
+  renderTrend(rows);
+}
+
+function renderTiles(rows, ranked, peak, nDays) {
+  const busiest = ranked[ranked.length - 1], quietest = ranked[0];
+  const tile = (label, value, detail) => `<div class="tile"><div class="label">${label}</div><div class="value">${value}</div><div class="detail">${detail}</div></div>`;
+  $("tiles").innerHTML =
+    tile("Average fullness", pctFmt(mean(rows.map((r) => r.pct))), `across ${rows.length.toLocaleString()} open-hour readings`) +
+    tile("Busiest time", `${DAYS[busiest.wd]} ${hourLabel(busiest.hour)}`, `averages ${pctFmt(busiest.avg)} full (~${Math.round(busiest.avgCount)} people)`) +
+    tile("Quietest time", `${DAYS[quietest.wd]} ${hourLabel(quietest.hour)}`, `averages ${pctFmt(quietest.avg)} full (~${Math.round(quietest.avgCount)} people)`) +
+    tile("Peak count seen", peak.cur.toLocaleString(), `${pctFmt(peak.pct)} of ${peak.cap.toLocaleString()} · ${dateFmt(peak.date, { weekday: "short", month: "short", day: "numeric" })}, ${hourLabel(peak.hour)}`);
+}
+
+function renderHeatmap(slots) {
+  const hours = slots.map((s) => s.hour);
+  const h0 = Math.min(...hours), h1 = Math.max(...hours);
+  const H = []; for (let h = h0; h <= h1; h++) H.push(h);
+  const vmax = Math.max(...slots.map((s) => s.avg));
+  const ramp = darkMode() ? [...RAMP].reverse() : RAMP;
+  const color = (v) => { const i = Math.min(ramp.length - 1, Math.round((v / vmax) * (ramp.length - 1))); return ramp[i]; };
+  const byKey = new Map(slots.map((s) => [s.wd * 100 + s.hour, s]));
+
+  const host = $("heatmap");
+  const W = Math.max(560, host.parentElement.clientWidth);
+  const left = 40, top = 20, gap = 2;
+  const cw = (W - left) / H.length, ch = 30;
+  let svg = `<svg width="${W}" height="${top + 7 * ch}" role="img" aria-label="Heatmap of average fullness by weekday and hour">`;
+  H.forEach((h, i) => {
+    if (H.length > 14 && i % 2) return;
+    svg += `<text x="${left + i * cw + cw / 2}" y="12" text-anchor="middle">${hourShort(h)}</text>`;
+  });
+  for (let d = 0; d < 7; d++) {
+    svg += `<text x="0" y="${top + d * ch + ch / 2 + 4}">${DAYS[d]}</text>`;
+    H.forEach((h, i) => {
+      const s = byKey.get(d * 100 + h);
+      const x = left + i * cw + gap / 2, y = top + d * ch + gap / 2;
+      const fill = s ? color(s.avg) : "var(--empty-cell)";
+      const t = s
+        ? `<b>${DAY_NAMES[d]} ${hourLabel(h)}</b><br>${pctFmt(s.avg)} full · ~${Math.round(s.avgCount)} people<br>${s.n} reading${s.n > 1 ? "s" : ""}`
+        : `<b>${DAY_NAMES[d]} ${hourLabel(h)}</b><br>Closed / no data`;
+      svg += `<rect x="${x}" y="${y}" width="${cw - gap}" height="${ch - gap}" rx="3" fill="${fill}" data-tip="${t.replace(/"/g, "&quot;")}"/>`;
+    });
+  }
+  host.innerHTML = svg + "</svg>";
+
+  const grad = `linear-gradient(to right, ${ramp.join(",")})`;
+  $("heatLegend").innerHTML = `<span>0%</span><span class="ramp" style="background:${grad}"></span><span>${pctFmt(vmax)}</span><span class="swatch" style="margin-left:8px"></span><span>closed / no data</span>`;
+
+  let tbl = `<table><tr><th>Day</th>${H.map((h) => `<th>${hourShort(h)}</th>`).join("")}</tr>`;
+  for (let d = 0; d < 7; d++) {
+    tbl += `<tr><td>${DAYS[d]}</td>${H.map((h) => { const s = byKey.get(d * 100 + h); return `<td>${s ? s.avg.toFixed(0) : ""}</td>`; }).join("")}</tr>`;
+  }
+  $("heatTable").innerHTML = tbl + "</table>";
+}
+
+function axisTicks(vmax) {
+  const step = vmax > 60 ? 20 : vmax > 25 ? 10 : 5;
+  const top = Math.max(step, Math.ceil(vmax / step) * step);
+  const ticks = []; for (let v = 0; v <= top; v += step) ticks.push(v);
+  return { top, ticks };
+}
+
+function renderHourBars(rows) {
+  const f = state.dayFilter;
+  const sel = rows.filter((r) => f === "all" || (f === "wk" ? r.wd < 5 : r.wd >= 5));
+  const host = $("hourBars");
+  if (!sel.length) { host.innerHTML = `<p class="note">No readings for these days yet.</p>`; return; }
+  const by = [...groupBy(sel, (r) => r.hour)].map(([h, rs]) => ({ h, avg: mean(rs.map((r) => r.pct)), cnt: mean(rs.map((r) => r.cur)), n: rs.length })).sort((a, b) => a.h - b.h);
+  const allHours = [...new Set(rows.map((r) => r.hour))];
+  const h0 = Math.min(...allHours), h1 = Math.max(...allHours);
+  const H = []; for (let h = h0; h <= h1; h++) H.push(h);
+  const map = new Map(by.map((b) => [b.h, b]));
+
+  const W = host.clientWidth || 600, Ht = 230, m = { l: 38, r: 4, t: 10, b: 24 };
+  const iw = W - m.l - m.r, ih = Ht - m.t - m.b;
+  const { top, ticks } = axisTicks(Math.max(...by.map((b) => b.avg)));
+  const y = (v) => m.t + ih - (v / top) * ih;
+  const bw = iw / H.length, gap = Math.max(2, bw * 0.18);
+
+  let svg = `<svg width="${W}" height="${Ht}" role="img" aria-label="Bar chart of average fullness by hour">`;
+  for (const t of ticks) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? "var(--axis)" : "var(--grid)"}" stroke-width="1"/>`;
+    svg += `<text x="${m.l - 6}" y="${y(t) + 4}" text-anchor="end">${t}%</text>`;
+  }
+  H.forEach((h, i) => {
+    const x = m.l + i * bw;
+    if (bw > 26 || i % 2 === 0) svg += `<text x="${x + bw / 2}" y="${Ht - 6}" text-anchor="middle">${hourShort(h)}</text>`;
+    const b = map.get(h);
+    if (!b) return;
+    const yy = y(b.avg), hgt = m.t + ih - yy, w = bw - gap, r = Math.min(4, w / 2, hgt);
+    const bx = x + gap / 2, base = m.t + ih;
+    // Rounded top corners, square at the baseline.
+    svg += `<path d="M${bx},${base} V${yy + r} Q${bx},${yy} ${bx + r},${yy} H${bx + w - r} Q${bx + w},${yy} ${bx + w},${yy + r} V${base} Z" fill="var(--series-1)"/>`;
+    const t = `<b>${hourLabel(h)}</b><br>${pctFmt(b.avg)} full · ~${Math.round(b.cnt)} people<br>${b.n} reading${b.n > 1 ? "s" : ""}`;
+    svg += `<rect x="${x}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent" data-tip="${t.replace(/"/g, "&quot;")}"/>`;
+  });
+  host.innerHTML = svg + "</svg>";
+}
+
+function renderRank(el, slots) {
+  el.innerHTML = slots.map((s) =>
+    `<li><span>${DAY_NAMES[s.wd]}, ${hourLabel(s.hour)}</span><span class="pct">${pctFmt(s.avg)}<span class="n">~${Math.round(s.avgCount)} ppl</span></span></li>`).join("");
+}
+
+function renderTrend(rows) {
+  const host = $("trend");
+  const days = [...groupBy(rows, (r) => r.date)].map(([d, rs]) => ({ d, avg: mean(rs.map((r) => r.pct)), n: rs.length })).sort((a, b) => (a.d < b.d ? -1 : 1));
+  const W = host.clientWidth || 600, Ht = 220, m = { l: 38, r: 12, t: 10, b: 24 };
+  const iw = W - m.l - m.r, ih = Ht - m.t - m.b;
+  const { top, ticks } = axisTicks(Math.max(...days.map((d) => d.avg)));
+  const x = (i) => m.l + (days.length === 1 ? iw / 2 : (i / (days.length - 1)) * iw);
+  const y = (v) => m.t + ih - (v / top) * ih;
+
+  let svg = `<svg width="${W}" height="${Ht}" data-crosshair role="img" aria-label="Line chart of daily average fullness">`;
+  for (const t of ticks) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? "var(--axis)" : "var(--grid)"}"/>`;
+    svg += `<text x="${m.l - 6}" y="${y(t) + 4}" text-anchor="end">${t}%</text>`;
+  }
+  const every = Math.max(1, Math.ceil(days.length / Math.max(2, Math.floor(iw / 70))));
+  days.forEach((d, i) => {
+    if (i % every === 0) svg += `<text x="${x(i)}" y="${Ht - 6}" text-anchor="middle">${dateFmt(d.d)}</text>`;
+  });
+  svg += `<path d="${days.map((d, i) => `${i ? "L" : "M"}${x(i)},${y(d.avg)}`).join(" ")}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if (days.length === 1) svg += `<circle cx="${x(0)}" cy="${y(days[0].avg)}" r="4" fill="var(--series-1)"/>`;
+  svg += `<line id="xhair" y1="${m.t}" y2="${m.t + ih}" stroke="var(--axis)" visibility="hidden"/>`;
+  svg += `<circle id="xdot" r="4.5" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>`;
+  svg += `<rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent" id="trendHit"/>`;
+  host.innerHTML = svg + "</svg>";
+
+  const hit = $("trendHit"), xh = $("xhair"), xd = $("xdot");
+  hit.addEventListener("pointermove", (e) => {
+    const rect = host.querySelector("svg").getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const i = days.length === 1 ? 0 : Math.max(0, Math.min(days.length - 1, Math.round(((px - m.l) / iw) * (days.length - 1))));
+    const d = days[i];
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+    xd.setAttribute("cx", x(i)); xd.setAttribute("cy", y(d.avg)); xd.setAttribute("visibility", "visible");
+    showTip(`<b>${dateFmt(d.d, { weekday: "long", month: "short", day: "numeric" })}</b><br>${pctFmt(d.avg)} full on average<br>${d.n} open-hour readings`, e.clientX, e.clientY);
+  });
+  hit.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); xd.setAttribute("visibility", "hidden"); hideTip(); });
+}
+
+let resizeT;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => state.rows.length && render(), 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.rows.length && render());
+
+// ---------- boot ----------
+$("demoBtn").addEventListener("click", () => start(demoRows(), true));
+$("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  try { start(parseCSV(await file.text()), false); } catch (err) { showEmpty("Couldn't read that file: " + err.message); }
+});
+
+(async () => {
+  if (new URLSearchParams(location.search).has("demo")) return start(demoRows(), true);
+  try {
+    const res = await fetch("data/occupancy.csv", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    start(parseCSV(await res.text()), false);
+  } catch {
+    showEmpty();
+  }
+})();
+</script>
+</body>
+</html>
