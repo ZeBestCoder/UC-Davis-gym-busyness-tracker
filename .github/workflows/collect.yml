@@ -27,6 +27,8 @@ jobs:
           # Last day to collect (inclusive, Davis local time). After this the job
           # still runs but makes no request. Disable the workflow when you're done.
           COLLECT_UNTIL: "2026-11-03"
+          # Manual "Run workflow" clicks fetch even when the gym is closed, for testing.
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Commit new data
         run: |

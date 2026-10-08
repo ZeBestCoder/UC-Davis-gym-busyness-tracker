@@ -95,6 +95,13 @@ svg text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: va
 .legend { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
 .legend .ramp { width: 140px; height: 10px; border-radius: 3px; }
 .legend .swatch { width: 14px; height: 10px; border-radius: 3px; background: var(--empty-cell); border: 1px solid var(--border); }
+.legend .swatch.closed { background: repeating-linear-gradient(45deg, var(--empty-cell) 0 3px, var(--grid) 3px 5px); }
+table.recent { font-size: 13px; margin-top: 0; }
+table.recent td, table.recent th { padding: 7px 14px; }
+table.recent td:last-child, table.recent th:last-child { text-align: left; }
+.pctnum { display: inline-block; width: 3.2em; text-align: right; margin-right: 10px; }
+.meter { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--grid); vertical-align: middle; overflow: hidden; }
+.meter span { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
@@ -189,10 +196,20 @@ footer a { color: var(--ink-2); }
       <div id="trend" style="margin-top:12px"></div>
     </section>
 
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Recent readings</h2>
+          <p class="note">The last 12 readings for this facility, newest first</p>
+        </div>
+        <a class="btn" href="data/occupancy.csv" download>Download all data (CSV)</a>
+      </div>
+      <div class="scroll-x" id="recentTable"></div>
+    </section>
+
     <footer>
-      Readings with an occupancy of 0 are treated as "closed" and left out of the averages.
-      Times are Davis local time. Each reading is taken a little after the hour.
-      <a href="data/occupancy.csv" download>Download the raw CSV</a>
+      Gym hours: Mon–Fri 5 AM–midnight, Sat–Sun 8 AM–11 PM. Readings outside those hours are left out.
+      Times are Davis local time. Each reading is taken a little after the hour, so "5 PM" means about 5:17 PM.
     </footer>
   </div>
 
@@ -209,6 +226,11 @@ footer a { color: var(--ink-2); }
 <script>
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+// Open hours by weekday (Mon=0) as [first hour, last hour]: Mon-Fri 5am-midnight, Sat-Sun 8am-11pm.
+const OPEN = [[5, 23], [5, 23], [5, 23], [5, 23], [5, 23], [8, 22], [8, 22]];
+const isOpen = (wd, h) => h >= OPEN[wd][0] && h <= OPEN[wd][1];
+const FIRST_HOUR = Math.min(...OPEN.map((o) => o[0])), LAST_HOUR = Math.max(...OPEN.map((o) => o[1]));
+const HOURS = []; for (let h = FIRST_HOUR; h <= LAST_HOUR; h++) HOURS.push(h);
 // Sequential blue ramp, step 100 -> 700.
 const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
 
@@ -254,12 +276,11 @@ function demoRows() {
   for (let d = 0; d < 28; d++) {
     const day = new Date(start); day.setDate(start.getDate() + d);
     const wd = (day.getDay() + 6) % 7, weekend = wd >= 5;
-    const open = weekend ? 8 : 6, close = weekend ? 21 : 23;
-    for (let h = 0; h < 24; h++) {
+    for (let h = OPEN[wd][0]; h <= OPEN[wd][1]; h++) {
       const t = new Date(day); t.setHours(h, 20);
       for (const [fid, name, cap, scale] of facs) {
         let f = 0;
-        if (h >= open && h < close) {
+        {
           const evening = Math.exp(-((h - 17.5) ** 2) / 6), noon = Math.exp(-((h - 12) ** 2) / 4), morning = Math.exp(-((h - 7.5) ** 2) / 2);
           f = weekend ? 0.45 * Math.exp(-((h - 14) ** 2) / 10) + 0.05 : 0.08 + 0.75 * evening + 0.35 * noon + 0.2 * morning;
           if (wd === 4) f *= 0.75; // Fridays are quieter
@@ -298,7 +319,7 @@ function facilities() {
   for (const r of state.rows) if (!m.has(r.fid)) m.set(r.fid, { fid: r.fid, name: r.name, cap: r.cap });
   return [...m.values()];
 }
-const open = () => state.rows.filter((r) => r.fid === state.facility && r.cur > 0 && r.pct != null);
+const open = () => state.rows.filter((r) => r.fid === state.facility && r.pct != null && isOpen(r.wd, r.hour));
 const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
 
 function groupBy(rows, keyFn) {
@@ -354,6 +375,7 @@ function render() {
   const dates = [...new Set(all.map((r) => r.date))].sort();
   const last = all.reduce((m, r) => (r.t > m ? r.t : m), new Date(0));
   $("status").textContent = `UC Davis Recreation · ${all.length.toLocaleString()} readings from ${dateFmt(dates[0])} to ${dateFmt(dates[dates.length - 1])} · last reading ${last.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`;
+  renderRecent(all);
 
   if (!rows.length) {
     $("tiles").innerHTML = `<div class="tile"><div class="label">No open-hour readings for this facility yet.</div></div>`;
@@ -367,9 +389,9 @@ function render() {
   }));
   const minN = Math.max(1, Math.min(2, Math.floor(dates.length / 7)));
   const ranked = slots.filter((s) => s.n >= minN).sort((a, b) => a.avg - b.avg);
-  const peak = rows.reduce((m, r) => (r.cur > m.cur ? r : m), rows[0]);
+  const latest = all.reduce((m, r) => (r.t > m.t ? r : m), all[0]);
 
-  renderTiles(rows, ranked, peak, dates.length);
+  renderTiles(rows, ranked, latest);
   renderHeatmap(slots);
   renderHourBars(rows);
   renderRank($("quietList"), ranked.slice(0, 6));
@@ -377,56 +399,83 @@ function render() {
   renderTrend(rows);
 }
 
-function renderTiles(rows, ranked, peak, nDays) {
+function renderTiles(rows, ranked, latest) {
   const busiest = ranked[ranked.length - 1], quietest = ranked[0];
   const tile = (label, value, detail) => `<div class="tile"><div class="label">${label}</div><div class="value">${value}</div><div class="detail">${detail}</div></div>`;
   $("tiles").innerHTML =
+    tile("Latest reading", `${latest.cur.toLocaleString()} people`, `${pctFmt(latest.pct)} full · ${latest.t.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}`) +
     tile("Average fullness", pctFmt(mean(rows.map((r) => r.pct))), `across ${rows.length.toLocaleString()} open-hour readings`) +
     tile("Busiest time", `${DAYS[busiest.wd]} ${hourLabel(busiest.hour)}`, `averages ${pctFmt(busiest.avg)} full (~${Math.round(busiest.avgCount)} people)`) +
-    tile("Quietest time", `${DAYS[quietest.wd]} ${hourLabel(quietest.hour)}`, `averages ${pctFmt(quietest.avg)} full (~${Math.round(quietest.avgCount)} people)`) +
-    tile("Peak count seen", peak.cur.toLocaleString(), `${pctFmt(peak.pct)} of ${peak.cap.toLocaleString()} · ${dateFmt(peak.date, { weekday: "short", month: "short", day: "numeric" })}, ${hourLabel(peak.hour)}`);
+    tile("Quietest time", `${DAYS[quietest.wd]} ${hourLabel(quietest.hour)}`, `averages ${pctFmt(quietest.avg)} full (~${Math.round(quietest.avgCount)} people)`);
 }
 
 function renderHeatmap(slots) {
-  const hours = slots.map((s) => s.hour);
-  const h0 = Math.min(...hours), h1 = Math.max(...hours);
-  const H = []; for (let h = h0; h <= h1; h++) H.push(h);
+  const H = HOURS;
   const vmax = Math.max(...slots.map((s) => s.avg));
-  const ramp = darkMode() ? [...RAMP].reverse() : RAMP;
-  const color = (v) => { const i = Math.min(ramp.length - 1, Math.round((v / vmax) * (ramp.length - 1))); return ramp[i]; };
+  const dark = darkMode();
+  // Light mode: low = pale, high = deep blue. Dark mode: flipped, so low recedes into the dark surface.
+  const shade = (v) => {
+    const k = Math.min(RAMP.length - 1, Math.round((v / vmax) * (RAMP.length - 1)));
+    const i = dark ? RAMP.length - 1 - k : k;
+    return { fill: RAMP[i], ink: i >= 6 ? "#ffffff" : "#0b0b0b" };
+  };
   const byKey = new Map(slots.map((s) => [s.wd * 100 + s.hour, s]));
 
   const host = $("heatmap");
-  const W = Math.max(560, host.parentElement.clientWidth);
+  const W = Math.max(600, host.parentElement.clientWidth);
   const left = 40, top = 20, gap = 2;
-  const cw = (W - left) / H.length, ch = 30;
+  const cw = (W - left) / H.length, ch = 32;
+  const showNums = cw >= 24;
   let svg = `<svg width="${W}" height="${top + 7 * ch}" role="img" aria-label="Heatmap of average fullness by weekday and hour">`;
   H.forEach((h, i) => {
-    if (H.length > 14 && i % 2) return;
+    if (cw < 34 && i % 2) return;
     svg += `<text x="${left + i * cw + cw / 2}" y="12" text-anchor="middle">${hourShort(h)}</text>`;
   });
   for (let d = 0; d < 7; d++) {
     svg += `<text x="0" y="${top + d * ch + ch / 2 + 4}">${DAYS[d]}</text>`;
     H.forEach((h, i) => {
       const s = byKey.get(d * 100 + h);
-      const x = left + i * cw + gap / 2, y = top + d * ch + gap / 2;
-      const fill = s ? color(s.avg) : "var(--empty-cell)";
-      const t = s
-        ? `<b>${DAY_NAMES[d]} ${hourLabel(h)}</b><br>${pctFmt(s.avg)} full · ~${Math.round(s.avgCount)} people<br>${s.n} reading${s.n > 1 ? "s" : ""}`
-        : `<b>${DAY_NAMES[d]} ${hourLabel(h)}</b><br>Closed / no data`;
-      svg += `<rect x="${x}" y="${y}" width="${cw - gap}" height="${ch - gap}" rx="3" fill="${fill}" data-tip="${t.replace(/"/g, "&quot;")}"/>`;
+      const x = left + i * cw + gap / 2, y = top + d * ch + gap / 2, w = cw - gap, hh = ch - gap;
+      const head = `<b>${DAY_NAMES[d]} ${hourLabel(h)}</b><br>`;
+      if (!isOpen(d, h)) {
+        svg += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="3" fill="url(#closed)" data-tip="${head}Closed"/>`;
+      } else if (!s) {
+        svg += `<rect x="${x + 0.5}" y="${y + 0.5}" width="${w - 1}" height="${hh - 1}" rx="3" fill="none" stroke="var(--axis)" stroke-dasharray="3 2" data-tip="${head}Open, no readings yet"/>`;
+      } else {
+        const c = shade(s.avg);
+        const t = `${head}${pctFmt(s.avg)} full · ~${Math.round(s.avgCount)} people<br>${s.n} reading${s.n > 1 ? "s" : ""}`;
+        svg += `<g data-tip="${t}"><rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="3" fill="${c.fill}"/>`;
+        if (showNums) svg += `<text x="${x + w / 2}" y="${y + hh / 2 + 4}" text-anchor="middle" style="fill:${c.ink};font-size:11px;font-weight:600">${Math.round(s.avg)}</text>`;
+        svg += `</g>`;
+      }
     });
   }
+  svg = svg.replace(">", `><defs><pattern id="closed" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--empty-cell)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--grid)" stroke-width="2"/></pattern></defs>`);
   host.innerHTML = svg + "</svg>";
 
+  const ramp = dark ? [...RAMP].reverse() : RAMP;
   const grad = `linear-gradient(to right, ${ramp.join(",")})`;
-  $("heatLegend").innerHTML = `<span>0%</span><span class="ramp" style="background:${grad}"></span><span>${pctFmt(vmax)}</span><span class="swatch" style="margin-left:8px"></span><span>closed / no data</span>`;
+  $("heatLegend").innerHTML = `<span>0%</span><span class="ramp" style="background:${grad}"></span><span>${pctFmt(vmax)}</span><span class="swatch closed" style="margin-left:8px"></span><span>Closed</span>`;
 
   let tbl = `<table><tr><th>Day</th>${H.map((h) => `<th>${hourShort(h)}</th>`).join("")}</tr>`;
   for (let d = 0; d < 7; d++) {
-    tbl += `<tr><td>${DAYS[d]}</td>${H.map((h) => { const s = byKey.get(d * 100 + h); return `<td>${s ? s.avg.toFixed(0) : ""}</td>`; }).join("")}</tr>`;
+    tbl += `<tr><td>${DAYS[d]}</td>${H.map((h) => {
+      const s = byKey.get(d * 100 + h);
+      return `<td>${!isOpen(d, h) ? "<span style='color:var(--muted)'>closed</span>" : s ? s.avg.toFixed(0) + "%" : ""}</td>`;
+    }).join("")}</tr>`;
   }
   $("heatTable").innerHTML = tbl + "</table>";
+}
+
+function renderRecent(all) {
+  const recent = [...all].sort((a, b) => b.t - a.t).slice(0, 12);
+  $("recentTable").innerHTML = `<table class="recent"><tr><th>When</th><th>People</th><th>Capacity</th><th>Fullness</th></tr>` +
+    recent.map((r) => `<tr>
+      <td>${r.t.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</td>
+      <td>${r.cur.toLocaleString()}</td>
+      <td>${r.cap.toLocaleString()}</td>
+      <td><span class="pctnum">${pctFmt(r.pct)}</span><span class="meter"><span style="width:${Math.min(100, r.pct || 0)}%"></span></span></td>
+    </tr>`).join("") + `</table>`;
 }
 
 function axisTicks(vmax) {
@@ -442,9 +491,7 @@ function renderHourBars(rows) {
   const host = $("hourBars");
   if (!sel.length) { host.innerHTML = `<p class="note">No readings for these days yet.</p>`; return; }
   const by = [...groupBy(sel, (r) => r.hour)].map(([h, rs]) => ({ h, avg: mean(rs.map((r) => r.pct)), cnt: mean(rs.map((r) => r.cur)), n: rs.length })).sort((a, b) => a.h - b.h);
-  const allHours = [...new Set(rows.map((r) => r.hour))];
-  const h0 = Math.min(...allHours), h1 = Math.max(...allHours);
-  const H = []; for (let h = h0; h <= h1; h++) H.push(h);
+  const H = HOURS.filter((h) => DAYS.some((_, d) => (f === "all" || (f === "wk" ? d < 5 : d >= 5)) && isOpen(d, h)));
   const map = new Map(by.map((b) => [b.h, b]));
 
   const W = host.clientWidth || 600, Ht = 230, m = { l: 38, r: 4, t: 10, b: 24 };

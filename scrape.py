@@ -22,6 +22,10 @@ FIELDS = [
 ]
 
 repo = os.environ.get("GITHUB_REPOSITORY", "local")
+# Open hours by weekday (Mon=0) as (first hour, last hour) in Davis local time.
+# Mon-Fri 5am-midnight, Sat-Sun 8am-11pm.
+OPEN_HOURS = {0: (5, 23), 1: (5, 23), 2: (5, 23), 3: (5, 23), 4: (5, 23), 5: (8, 22), 6: (8, 22)}
+
 USER_AGENT = (
     "ucd-gym-occupancy-study/1.0 (student research; one request per hour; "
     f"+https://github.com/{repo})"
@@ -63,6 +67,12 @@ def main():
     until = os.environ.get("COLLECT_UNTIL")  # YYYY-MM-DD, inclusive
     if until and now_local.date() > dt.date.fromisoformat(until):
         print(f"Collection window ended on {until}; not fetching.")
+        return 0
+
+    first, last = OPEN_HOURS[now_local.weekday()]
+    forced = os.environ.get("FORCE", "").lower() == "true"  # manual runs always fetch
+    if not (first <= now_local.hour <= last) and not forced:
+        print(f"Gym closed at {now_local:%a %H:%M}; not fetching.")
         return 0
 
     try:

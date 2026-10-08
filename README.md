@@ -40,8 +40,9 @@ makes no more requests. When you're done, disable the workflow entirely:
 
 - Times are Davis local time (`timestamp_local`, `weekday`, `hour`). GitHub's scheduler
   sometimes starts runs late or skips one during busy periods, so expect a few gaps.
-- Readings of 0 are treated as "closed" by the dashboard. The collector runs around the clock,
-  and closed hours drop out of the analysis automatically.
+- Only open hours are collected: Mon–Fri 5 AM–midnight, Sat–Sun 8 AM–11 PM (`OPEN_HOURS` in
+  `scrape.py`, `OPEN` in `index.html`). The workflow still wakes every hour but exits without
+  a request when the gym is closed. Manual "Run workflow" clicks always fetch, for testing.
 - If the site is down or shows a waiting-room page, that hour is skipped (no row), not
   recorded as 0. Check the Actions run log for yellow warnings.
 - The site's `robots.txt` asks automated tools not to crawl it. This collector makes one
